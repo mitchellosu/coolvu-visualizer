@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CoolVu Window Film Visualizer</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+      body { margin: 0; background: #f2f5f9; color: #132231; font-family: Inter, system-ui, sans-serif; }
+      .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem 3rem; }
+      .card { background: #fff; border-radius: 14px; box-shadow: 0 8px 28px rgba(9,30,66,.08); border: 1px solid #e5eaf0; }
+      .hero { padding: 1.5rem; margin-bottom: 1rem; }
+      .subtle { color: #516477; }
+      .layout { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+      @media (min-width: 950px) { .layout { grid-template-columns: 360px 1fr; } }
+      .panel, .preview { padding: 1rem; }
+      .stack { display: grid; gap: .75rem; }
+      .film-grid { display: grid; gap: .75rem; margin-top: .75rem; }
+      .film-option { display: flex; align-items: center; gap: .75rem; width: 100%; text-align:left; padding:.75rem; border-radius:10px; border:1px solid #dae3ec; background:#fff; cursor:pointer; }
+      .film-option.active { border-color:#0a66c2; box-shadow: inset 0 0 0 1px #0a66c2; }
+      .swatch { width:22px; height:22px; border-radius:999px; border:1px solid rgba(19,34,49,.3); flex:none; }
+      .input,.button { width:100%; border-radius:10px; border:1px solid #c7d4e2; padding:.65rem .75rem; font:inherit; }
+      .button { background:#0a66c2; color:#fff; border-color:#0a66c2; font-weight:600; cursor:pointer; }
+      .button.secondary { background:#eff5fb; color:#174570; border-color:#cde1f4; }
+      .button:disabled { opacity:.65; cursor:not-allowed; }
+      .image-grid { display:grid; gap:1rem; grid-template-columns:1fr; }
+      @media (min-width:760px){ .image-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+      .image-box { background:#f8fbff; border:1px solid #dfebf7; border-radius:12px; overflow:hidden; }
+      .image-box h3 { margin:0; padding:.75rem .9rem; font-size:.92rem; border-bottom:1px solid #dfebf7; }
+      .image-box img { width:100%; display:block; max-height:430px; object-fit:contain; background:#f4f9ff; }
+      .empty { height:260px; display:grid; place-items:center; color:#5c6f82; text-align:center; padding:1rem; }
+      .error { color:#a42020; font-size:.9rem; }
+      .note { font-size:.86rem; color:#4f6379; }
+      .pill { display:inline-flex; align-items:center; padding:.2rem .55rem; border-radius:999px; font-size:.74rem; color:#174570; background:#e9f2fb; }
+      .cta { margin-top:1rem; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useMemo, useState } = React;
+
+      const FILMS = [
+        { id: "darkvu20", name: "DarkVu 20 Ceramic", short: "Deep charcoal tint", swatch: "#22262d" },
+        { id: "coolvu35", name: "CoolVu 35 Ceramic", short: "Balanced privacy + light", swatch: "#48505b" },
+        { id: "coolvu50", name: "CoolVu 50 Ceramic", short: "Light smoke tint", swatch: "#818c98" },
+        { id: "carbonbronze", name: "CoolVu Carbon Bronze", short: "Warm bronze tone", swatch: "#77614c" },
+        { id: "reflectivesilver", name: "Reflective Silver", short: "Mirror-like exterior", swatch: "#c3ccd5" },
+        { id: "clearsafety", name: "Clear Safety Film", short: "Invisible protection", swatch: "#dce3ea" }
+      ];
+
+      function fileToDataURL(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function dataURLToFile(dataUrl, filename) {
+        const [meta, base64] = dataUrl.split(",");
+        const mime = meta.match(/data:(.*?);base64/)?.[1] || "image/png";
+        const bytes = atob(base64);
+        const array = new Uint8Array(bytes.length);
+        for (let i = 0; i < bytes.length; i += 1) array[i] = bytes.charCodeAt(i);
+        return new File([array], filename, { type: mime });
+      }
+
+      function App() {
+        const [sourceFile, setSourceFile] = useState(null);
+        const [sourcePreview, setSourcePreview] = useState("");
+        const [selectedFilmId, setSelectedFilmId] = useState(FILMS[0].id);
+        const [resultByFilm, setResultByFilm] = useState({});
+        const [isLoading, setIsLoading] = useState(false);
+        const [error, setError] = useState("");
+
+        const selectedFilm = useMemo(() => FILMS.find((f) => f.id === selectedFilmId), [selectedFilmId]);
+        const currentResult = resultByFilm[selectedFilmId] || "";
+
+        async function onFileChange(event) {
+          setError("");
+          const file = event.target.files?.[0];
+          if (!file) return;
+          if (!file.type.startsWith("image/")) {
+            setError("Please upload a JPG or PNG image file.");
+            return;
+          }
+          const preview = await fileToDataURL(file);
+          setSourceFile(file);
+          setSourcePreview(preview);
+        }
+
+        async function applyFilm() {
+          setError("");
+          if (!sourceFile || !selectedFilm) {
+            setError("Please upload a house photo and select a film.");
+            return;
+          }
+
+          setIsLoading(true);
+          try {
+            const formData = new FormData();
+            formData.append("image", sourceFile);
+            formData.append("filmId", selectedFilmId);
+
+            const response = await fetch("/api/visualize", { method: "POST", body: formData });
+            const payload = await response.json();
+
+            if (!response.ok) {
+              throw new Error(payload?.error || "Image generation failed.");
+            }
+
+            const b64 = payload?.imageB64;
+            if (!b64) throw new Error("No image result returned from server.");
+            const resultDataUrl = `data:image/png;base64,${b64}`;
+            setResultByFilm((prev) => ({ ...prev, [selectedFilmId]: resultDataUrl }));
+          } catch (err) {
+            setError(err.message || "Unexpected error.");
+          } finally {
+            setIsLoading(false);
+          }
+        }
+
+        function downloadImage() {
+          if (!currentResult) return;
+          const file = dataURLToFile(currentResult, `coolvu-${selectedFilmId}-visualization.png`);
+          const url = URL.createObjectURL(file);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = file.name;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+
+        return (
+          <div className="container">
+            <section className="card hero">
+              <span className="pill">CoolVu Window Film Visualizer</span>
+              <h1>Show homeowners their upgrade before installation.</h1>
+              <p className="subtle">Upload a home photo, pick a film, and generate a photorealistic window film mockup using GPT Image 2.</p>
+            </section>
+
+            <section className="layout">
+              <aside className="card panel stack">
+                <label>
+                  <strong>1) Upload house photo</strong>
+                  <input type="file" className="input" accept="image/png,image/jpeg,image/jpg" onChange={onFileChange} />
+                </label>
+
+                <div>
+                  <strong>2) Choose film</strong>
+                  <div className="film-grid">
+                    {FILMS.map((film) => (
+                      <button key={film.id} className={`film-option ${film.id === selectedFilmId ? "active" : ""}`} onClick={() => setSelectedFilmId(film.id)} type="button">
+                        <span className="swatch" style={{ background: film.swatch }} />
+                        <span><strong>{film.name}</strong><br /><span className="subtle">{film.short}</span></span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button className="button" onClick={applyFilm} disabled={isLoading || !sourceFile}>{isLoading ? "Visualizing your upgrade..." : "Apply Film"}</button>
+                <button className="button secondary" onClick={downloadImage} disabled={!currentResult}>Download Result</button>
+                {error ? <div className="error">{error}</div> : null}
+                <p className="note">API key is handled server-side only. Configure it via OPENAI_API_KEY in your `.env`.</p>
+              </aside>
+
+              <main className="card preview">
+                <div className="image-grid">
+                  <article className="image-box">
+                    <h3>Original Photo</h3>
+                    {sourcePreview ? <img src={sourcePreview} alt="Original house upload" /> : <div className="empty">Upload a home photo to start.</div>}
+                  </article>
+                  <article className="image-box">
+                    <h3>{selectedFilm?.name || "Visualization"}</h3>
+                    {currentResult ? <img src={currentResult} alt="House with selected film applied" /> : <div className="empty">{isLoading ? "Visualizing your upgrade..." : "Press Apply Film to generate your upgraded view."}</div>}
+                  </article>
+                </div>
+
+                <div className="cta"><a className="button" href="https://example.com/book" target="_blank" rel="noreferrer">Book a Consultation</a></div>
+              </main>
+            </section>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>
